@@ -1,1 +1,4 @@
 /bin/
+echo "Planing.odt" >> .gitignore
+git add .gitignore
+git commit -m "IGNORE: Bloquea Planing.odt"
