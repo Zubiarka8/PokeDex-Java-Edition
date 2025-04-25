@@ -1,59 +1,83 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.Pokemonm</groupId>
-    <artifactId>PokemonApp</artifactId>
-    <version>1.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+	<groupId>com.Pokemonm</groupId>
+	<artifactId>PokemonApp</artifactId>
+	<version>1.0-SNAPSHOT</version>
+	<packaging>jar</packaging>
 
-    <dependencies>
-        <!-- Dependencia para jBCrypt -->
-        <dependency>
-            <groupId>org.mindrot</groupId>
-            <artifactId>jbcrypt</artifactId>
-            <version>0.4</version>
-        </dependency>
+	<dependencies>
+		<!-- Dependencia para jBCrypt -->
+		<dependency>
+			<groupId>org.mindrot</groupId>
+			<artifactId>jbcrypt</artifactId>
+			<version>0.4</version>
+		</dependency>
 
-        <!-- Otras dependencias necesarias para tu proyecto (por ejemplo, MySQL Connector/J) -->
-        <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.26</version> <!-- Usa la versión adecuada según tu configuración -->
-        </dependency>
+		<!-- Otras dependencias necesarias para tu proyecto (por ejemplo, MySQL
+		Connector/J) -->
+		<dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+			<version>8.0.26</version> <!-- Usa la versión adecuada según tu
+			configuración -->
+		</dependency>
 
-        <!-- Dependencia para JSON, si es que la necesitas -->
-        <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20210307</version>
-        </dependency>
-        
+		<!-- Dependencia para JSON, si es que la necesitas -->
+		<dependency>
+			<groupId>org.json</groupId>
+			<artifactId>json</artifactId>
+			<version>20231013</version>
+		</dependency>
+		<!-- Dependencia para JSON se convierta en un objeto de java -->
+		<dependency>
+			<groupId>com.google.code.gson</groupId>
+			<artifactId>gson</artifactId>
+			<version>2.8.9</version>
+		</dependency>
 
-    </dependencies>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+			<version>2.15.2</version>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-annotations</artifactId>
+			<version>2.15.2</version>
+		</dependency>
+		<!-- Jackson Databind -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>2.15.2</version>
+		</dependency>
 
-    <build>
-        <plugins>
-            <!-- Plugin para compilar el código fuente de Java -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
-                <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-    
-   	<repositories>
-    	<repository>
-       		<id>central</id>
-        	<url>https://repo.maven.apache.org/maven2</url>
-    	</repository>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<!-- Plugin para compilar el código fuente de Java -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.8.1</version>
+				<configuration>
+					<source>1.8</source>
+					<target>1.8</target>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<repositories>
+		<repository>
+			<id>central</id>
+			<url>https://repo.maven.apache.org/maven2</url>
+		</repository>
 	</repositories>
 
 </project>

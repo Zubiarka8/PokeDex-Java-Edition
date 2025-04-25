@@ -1,47 +1,104 @@
 package interfaz;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import javax.swing.*;
+import bd.MysqlSesioKudeaketa;
+import java.awt.*;
+import java.awt.event.*;
 
-import bd.ConexionBD;
+public class LoginVentana extends JFrame {
+    private MysqlSesioKudeaketa sesioKudeaketa;
 
-public class LoginVentana
-{
+    public LoginVentana() {
+        // Configuración de la ventana
+        setTitle("Saioa Hasi");
+        setSize(350, 200); // Aumentado un poco el tamaño
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
 
-	// Método para autenticar a un usuario
-	public boolean autenticarUsuario(String nombreUsuario, String contrasena)
-	{
-		boolean	autenticado	= false;
+        // Panel principal con BorderLayout
+        JPanel panelNagusia = new JPanel(new BorderLayout(10, 10));
+        panelNagusia.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-		// Definir la consulta SQL
-		String	query		= "SELECT * FROM login WHERE nombre_de_usuario = ? AND contraseña = ?";
+        // Panel para los campos de entrada
+        JPanel inputPanel = new JPanel(new GridLayout(2, 2, 5, 5));
+        
+        // Componentes para usuario y contraseña
+        JLabel erabiltzaileLabel = new JLabel("Erabiltzailea:");
+        JTextField erabiltzaileaField = new JTextField();
+        JLabel pasahitzaLabel = new JLabel("Pasahitza:");
+        JPasswordField pasahitzaField = new JPasswordField();
 
-		try (Connection connection = ConexionBD.obtenerConexion();
-				PreparedStatement ps = connection.prepareStatement(query))
-		{
+        inputPanel.add(erabiltzaileLabel);
+        inputPanel.add(erabiltzaileaField);
+        inputPanel.add(pasahitzaLabel);
+        inputPanel.add(pasahitzaField);
 
-			// Establecer los parámetros de la consulta
-			ps.setString(1, nombreUsuario);
-			ps.setString(2, contrasena); // Aquí deberías aplicar un proceso de hashing a la contraseña
+        // Panel para el botón
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton sartuButton = new JButton("Sartu");
 
-			// Ejecutar la consulta
-			ResultSet rs = ps.executeQuery();
+        // Configuración del botón
+        sartuButton.setPreferredSize(new Dimension(100, 30));
+        buttonPanel.add(sartuButton);
 
-			// Si existe un resultado, el usuario está autenticado
-			if(rs.next())
-			{
-				autenticado = true;
-			}
+        // Añadir paneles al panel principal
+        panelNagusia.add(inputPanel, BorderLayout.CENTER);
+        panelNagusia.add(buttonPanel, BorderLayout.SOUTH);
 
-		}
-		catch (SQLException e)
-		{
-			e.printStackTrace();
-		}
+        // Acción del botón
+        this.sesioKudeaketa = new MysqlSesioKudeaketa();
+        sartuButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String erabiltzailea = erabiltzaileaField.getText().trim();
+                String pasahitza = new String(pasahitzaField.getPassword()).trim();
+                
+                if(erabiltzailea.isEmpty() || pasahitza.isEmpty()) {
+                    JOptionPane.showMessageDialog(LoginVentana.this, 
+                        "Mesedez, bete erabiltzailea eta pasahitza", 
+                        "Oharra", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
 
-		return autenticado;
-	}
+                boolean autentifikazioa = sesioKudeaketa.irekiSesioa(erabiltzailea, pasahitza);
+                
+                if(autentifikazioa) {
+                    // Cerrar la ventana de login
+                    dispose();
+                    
+                    // Mostrar mensaje de bienvenida
+                    JOptionPane.showMessageDialog(null, "Ongi etorri " + erabiltzailea);
+                    
+                    // Abrir la ventana de Pokémon
+                    SwingUtilities.invokeLater(() -> {
+                        PokemonVentana pokemonVentana = new PokemonVentana();
+                        pokemonVentana.setVisible(true);
+                    });
+                } else {
+                    JOptionPane.showMessageDialog(LoginVentana.this, 
+                        "Errorea: Erabiltzailea edo pasahitza okerrak", 
+                        "Errorea", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
 
+        // Añadir panel principal a la ventana
+        add(panelNagusia);
+        setVisible(true);
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            LoginVentana ventana = new LoginVentana();
+            ventana.setSesioKudeaketa(new MysqlSesioKudeaketa());
+        });
+    }
+
+    // Getters y setters
+    public MysqlSesioKudeaketa getSesioKudeaketa() {
+        return sesioKudeaketa;
+    }
+
+    public void setSesioKudeaketa(MysqlSesioKudeaketa sesioKudeaketa) {
+        this.sesioKudeaketa = sesioKudeaketa;
+    }
 }
