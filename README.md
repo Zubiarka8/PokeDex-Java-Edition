@@ -2,12 +2,13 @@
 
 ## 📋 Proiektuaren Sarrera
 
-**APP Komertziala** Android aplikazio profesional bat da, komertzialen eguneroko lan-fluxua errazteko diseinatua. Aplikazioak bi funtzionalitate nagusi eskaintzen ditu:
+**APP Komertziala** Android aplikazio profesional bat da, komertzialen eguneroko lan-fluxua errazteko diseinatua. Aplikazioak hiru funtzionalitate nagusi eskaintzen ditu:
 
+- **Komertzialen Kudeaketa**: Komertzial bakoitzak bere datuak modu seguruan kudeatu ditzake, saio-kudeaketa zorrotzaren bidez.
 - **Agenda Kudeaketa**: Komertzial bakoitzak bere bisitak eta zita-programazioak kudeatu ditzake, bazkideekin izandako harremanak jarraituz.
-- **Eskaeren Kudeaketa**: Eskaera berriak sortu, editatu eta jarraitu, katalogoko produktuekin lotuta.
+- **Inbentarioa eta Eskaeren Kudeaketa**: Produktuen katalogoa kudeatu, eskaera berriak sortu, editatu eta jarraitu, katalogoko produktuekin lotuta.
 
-Aplikazioak **XML fitxategien bidezko sinkronizazioa** onartzen du, datu-base lokal bat mantentzen du Room Persistence Library erabiliz, eta **segurtasun iragazki zorrotza** inplementatzen du: komertzial bakoitzak bere datuak bakarrik ikus ditzake.
+Aplikazioak **XML fitxategien bidezko sinkronizazioa** onartzen du (ordezkaritzatik jasotako datuak), datu-base lokal bat mantentzen du Room Persistence Library erabiliz, eta **segurtasun iragazki zorrotza** inplementatzen du: komertzial bakoitzak bere datuak bakarrik ikus ditzake (`komertzialKodea` WHERE klausulak datu-baseko query guztietan).
 
 ---
 
@@ -182,32 +183,51 @@ Indizeak kontsultak azkartzeko erabiltzen dira:
 
 ---
 
-## 🔄 Migrazioak
+## 🔄 Migrazioak: Datu-basearen Bertsio Aldaketak eta Eskema Eguneraketak
 
 ### Bertsio Kudeaketa
 
-Datu-baseak **15 bertsio** ditu, eskema aldaketak migrazio estrategia baten bidez kudeatzen direlarik.
+Datu-baseak **15 bertsio** ditu, eskema aldaketak migrazio estrategia baten bidez kudeatzen direlarik. Migrazio bakoitza `Migration` klase baten bidez definitzen da, eta `AppDatabase.getInstance()` deitzean automatikoki exekutatzen da.
 
 ### Migrazio Estrategia
 
 **Bertsio igoerak:**
 - Migrazio bakoitza `Migration` klase baten bidez definitzen da
 - `taulaExistitzenDa()` eta `zutabeaExistitzenDa()` metodoak bikoiztuak saihesteko erabiltzen dira
-- Transakzio seguruak: `runInTransaction()` erabiliz
+- Transakzio seguruak: `runInTransaction()` erabiliz (Room-ek automatikoki aplikatzen du)
 
-**Adibidea (MIGRAZIO_13_14):**
+**Adibidea (MIGRAZIO_13_14 - Table Swap Estrategia):**
 ```java
 private static final Migration MIGRAZIO_13_14 = new Migration(13, 14) {
     @Override
     public void migrate(SupportSQLiteDatabase db) {
-        // Table swap estrategia: Foreign Key gehitzeko
-        // 1. Sortu taula berria egitura ZUZEKIN
-        db.execSQL("CREATE TABLE bazkideak_new (...)");
-        // 2. Kopiatu datu guztiak
-        db.execSQL("INSERT INTO bazkideak_new SELECT ... FROM bazkideak");
-        // 3. Ezabatu taula zaharra eta aldatu izena
+        if (!taulaExistitzenDa(db, "bazkideak")) {
+            // Taula ez badago, sortu egitura ZUZEKIN (Foreign Key barne)
+            db.execSQL("CREATE TABLE bazkideak (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                       "nan TEXT, izena TEXT, ..., " +
+                       "FOREIGN KEY(komertzialKodea) REFERENCES komertzialak(kodea) ON DELETE CASCADE)");
+            return;
+        }
+
+        // Table swap estrategia: SQLite-k ezin du Foreign Key bat gehitu ALTER TABLE-rekin
+        // 1. Sortu taula berria egitura ZUZEKIN (Foreign Key barne)
+        db.execSQL("CREATE TABLE bazkideak_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                   "nan TEXT, izena TEXT, ..., " +
+                   "FOREIGN KEY(komertzialKodea) REFERENCES komertzialak(kodea) ON DELETE CASCADE)");
+
+        // 2. Kopiatu datu guztiak taula zaharretik berrira
+        db.execSQL("INSERT INTO bazkideak_new SELECT id, nan, izena, ... FROM bazkideak");
+
+        // 3. Ezabatu taula zaharra eta indize zaharrak
+        db.execSQL("DROP INDEX IF EXISTS index_bazkideak_nan");
         db.execSQL("DROP TABLE bazkideak");
+
+        // 4. Aldatu berriaren izena bazkideak izatera
         db.execSQL("ALTER TABLE bazkideak_new RENAME TO bazkideak");
+
+        // 5. Sortu indize berriak
+        db.execSQL("CREATE INDEX index_bazkideak_nan ON bazkideak(nan)");
+        db.execSQL("CREATE INDEX index_bazkideak_komertzialKodea ON bazkideak(komertzialKodea)");
     }
 };
 ```
@@ -220,16 +240,230 @@ private static final Migration MIGRAZIO_13_14 = new Migration(13, 14) {
 
 **Erabilera**: Eskema aldaketa handi bat gertatzen denean (adib. Foreign Key gehitzea taula zaharretan), datu-base zaharra ezabatu eta berria sortzen da. **OHARRA**: Produkzioan datu garrantzitsuak badaude, migrazio espezifikoak idatzi behar dira.
 
-**Migrazio garrantzitsuenak:**
-- **MIGRAZIO_2_3**: `agenda_bisitak` taula sortu
-- **MIGRAZIO_4_5**: `bazkideak` taula sortu
-- **MIGRAZIO_6_7**: `eskaera_goiburuak` eta `eskaera_xehetasunak` taulak berriz sortu
-- **MIGRAZIO_7_8**: `komertzialId` eta `bazkideaId` eremuak gehitu
-- **MIGRAZIO_13_14**: `bazkideak` taula Foreign Key-ekin berriz sortu (table swap)
+**Migrazio Garrantzitsuenak (Kronologikoa):**
+
+| Bertsioa | Migrazioa | Deskribapena |
+|----------|-----------|--------------|
+| **2 → 3** | `MIGRAZIO_2_3` | `agenda_bisitak` taula sortu (Agenda modulua) |
+| **4 → 5** | `MIGRAZIO_4_5` | `bazkideak` taula sortu (`bazkideak.xml` egitura) |
+| **5 → 6** | `MIGRAZIO_5_6` | `katalogoa` taulan `irudia_izena` eremua gehitu |
+| **6 → 7** | `MIGRAZIO_6_7` | `eskaera_goiburuak` eta `eskaera_xehetasunak` taulak berriz sortu (indizeekin) |
+| **7 → 8** | `MIGRAZIO_7_8` | `eskaera_goiburuak` taulan `bazkideaId` eta `komertzialId` eremuak gehitu |
+| **8 → 9** | `MIGRAZIO_8_9` | `agenda_bisitak` taulan `bazkideaId` eta `komertzialaId` eremuak gehitu |
+| **9 → 10** | `MIGRAZIO_9_10` | `komertzialak` taulan `abizena`, `posta`, `jaiotzeData`, `argazkia` eremuak gehitu |
+| **12 → 13** | `MIGRAZIO_12_13` | `bazkideak` taulan `kodea`, `helbidea`, `probintzia`, `komertzialKodea`, `sortutakoData` eremuak gehitu |
+| **13 → 14** | `MIGRAZIO_13_14` | `bazkideak` taula Foreign Key-ekin berriz sortu (table swap estrategia) |
+
+**Migrazio Beste Praktikak:**
+- **Idempotentzia**: Migrazio bakoitza hainbat aldiz exekuta daiteke emaitza bera lortuz (`IF NOT EXISTS`, `IF EXISTS` erabiliz).
+- **Datuen Kontserbazioa**: Datuak kopiatzen dira taula zaharretik berrira, datu-galerarik gabe.
+- **Indizeak**: Indize berriak sortzen dira kontsultak azkartzeko.
 
 ---
 
 ## ⚙️ Funtzionalitate Kritikoak
+
+### Erosketa Sistema: Balidazio Prozesua eta Eskaeren Integritatea
+
+Aplikazioak **eskaeren balidazio prozesu zorrotza** inplementatzen du, datuen integritatea bermatzeko. Prozesua bi faseetan banatzen da:
+
+#### 1. EskaeraBalidatzailea: Datuak Balidatu
+
+**Helburua**: Eskaera bat datu-basean gordetzeko aurretik, derrigorrezko eremu guztiak beteta daudela eta datu-basean existitzen direla egiaztatu.
+
+**Balidazio Prozesua:**
+```java
+public void balidatuEskaera(EskaeraGoiburua eskaera) throws IllegalArgumentException {
+    // 1. Komertzial kodea balidatu - DERRIORREZKO EREMUA
+    String komertzialKodea = eskaera.getKomertzialKodea();
+    if (komertzialKodea == null || komertzialKodea.trim().isEmpty()) {
+        throw new IllegalArgumentException("Komertzialaren kodea falta da");
+    }
+    
+    // 2. Komertzial kodea datu-basean existitzen dela egiaztatu
+    Komertziala komertziala = datuBasea.komertzialaDao().kodeaBilatu(komertzialKodea);
+    if (komertziala == null) {
+        throw new IllegalArgumentException("Komertzial kodea ez da existitzen: " + komertzialKodea);
+    }
+    
+    // 3. Komertzial IDa ezarri balidazioa gainditu bada
+    eskaera.setKomertzialId(komertziala.getId());
+    
+    // 4. Bazkidea kodea balidatu - DERRIORREZKO EREMUA
+    String bazkideaKodea = eskaera.getBazkideaKodea();
+    if (bazkideaKodea == null || bazkideaKodea.trim().isEmpty()) {
+        throw new IllegalArgumentException("Bazkidearen kodea falta da");
+    }
+    
+    // 5. Bazkidea kodea datu-basean existitzen dela egiaztatu (NAN edo kodea erabiliz)
+    Bazkidea bazkidea = datuBasea.bazkideaDao().nanBilatu(bazkideaKodea);
+    if (bazkidea == null) {
+        bazkidea = datuBasea.bazkideaDao().kodeaBilatu(bazkideaKodea);
+        if (bazkidea == null) {
+            throw new IllegalArgumentException("Bazkidea kodea ez da existitzen: " + bazkideaKodea);
+        }
+    }
+    
+    // 6. Bazkidea IDa ezarri balidazioa gainditu bada
+    eskaera.setBazkideaId(bazkidea.getId());
+}
+```
+
+#### 2. Room Transakzio Seguruak: Eskaera Gorde
+
+**Helburua**: Eskaera goiburua eta xehetasunak transakzio bakar batean gorde, datuen osotasuna bermatzeko.
+
+**Inplementazioa (MainActivity.gordeEskaera()):**
+```java
+db.runInTransaction(() -> {
+    // 1. Eskaera goiburua txertatu
+    EskaeraGoiburua goi = new EskaeraGoiburua();
+    goi.setZenbakia(zenbakia);
+    goi.setData(data);
+    goi.setKomertzialKodea(komertzialKodea);
+    goi.setKomertzialId(kom.getId());
+    db.eskaeraGoiburuaDao().txertatu(goi);
+    
+    // 2. Eskaera xehetasunak txertatu (saskiko produktu bakoitzarentzat)
+    for (SaskiaElementua e : saskia) {
+        EskaeraXehetasuna x = new EskaeraXehetasuna();
+        x.setEskaeraZenbakia(zenbakia);
+        x.setArtikuluKodea(e.artikuluKodea);
+        x.setKantitatea(e.kopurua);
+        x.setPrezioa(e.salmentaPrezioa);
+        db.eskaeraXehetasunaDao().txertatu(x);
+    }
+    
+    // 3. Stock eguneratu (produktu bakoitzaren stock-a murriztu)
+    for (SaskiaElementua e : saskia) {
+        Katalogoa k = db.katalogoaDao().artikuluaBilatu(e.artikuluKodea);
+        if (k != null) {
+            int stockBerria = Math.max(0, k.getStock() - e.kopurua);
+            db.katalogoaDao().stockaEguneratu(e.artikuluKodea, stockBerria);
+        }
+    }
+});
+```
+
+**Abantailak:**
+- **Datuen Osotasuna**: Transakzio bakar batean exekutatzen da; errore bat gertatzen bada, guztia atzera egingo da.
+- **Stock Sinkronizatua**: Stock eguneratu egiten da eskaera egiten denean, inbentarioa zehatza mantenduz.
+- **Balidazio Zorrotza**: `EskaeraBalidatzailea` erabiliz, datu guztiak baliozkoak direla egiaztatzen da gordetzeko aurretik.
+
+### Google Maps: Bazkideen Geolokalizazioa eta Markatzaileen Kudeaketa
+
+Aplikazioak **Google Maps API** erabiltzen du bazkideen geolokalizazioa erakusteko eta kontaktua errazteko.
+
+#### Inplementazioa
+
+**1. MapFragment Konfigurazioa (LoginActivity eta MainActivity):**
+```java
+@Override
+public void onMapReady(@NonNull GoogleMap googleMap) {
+    // Donostia zentratu (Gipuzkoa egoitza)
+    LatLng donostia = new LatLng(DONOSTIA_LAT, DONOSTIA_LNG);
+    googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(donostia, 14f));
+    googleMap.getUiSettings().setZoomControlsEnabled(true);
+    
+    // Markatzailea (marker) Gipuzkoa egoitzan
+    googleMap.addMarker(new MarkerOptions()
+            .position(donostia)
+            .title(getString(R.string.contact_title)));
+}
+```
+
+**2. Map Intent (Kontaktua Irekitzeko):**
+```java
+private void openMap() {
+    Uri gmmIntentUri = Uri.parse("geo:0,0?q=" + MAP_QUERY);
+    Intent mapIntent = new Intent(Intent.ACTION_VIEW, gmmIntentUri);
+    mapIntent.setPackage("com.google.android.apps.maps");
+    if (mapIntent.resolveActivity(getPackageManager()) != null) {
+        startActivity(mapIntent);
+    } else {
+        // Fallback: Web bidezko mapa
+        Uri fallback = Uri.parse("https://www.google.com/maps/search/?api=1&query=" + MAP_QUERY);
+        startActivity(new Intent(Intent.ACTION_VIEW, fallback));
+    }
+}
+```
+
+**Konfigurazioa:**
+- **Google Maps API gakoa**: `local.properties` fitxategian (`MAPS_API_KEY`)
+- **Play Services Maps**: 18.2.0 bertsioa
+- **MapFragment**: `SupportMapFragment` erabiliz XML layout-ean
+
+### Komunikazio Lasterbideak: Deiak eta Posta Elektroniko Bidezko Esportazioak
+
+Aplikazioak **Android Intent** sistema erabiltzen du komunikazio lasterbideak irekitzeko eta fitxategiak bidaltzeko.
+
+#### 1. Deiak (ACTION_DIAL)
+
+**Helburua**: Telefono dialerra ireki zenbaki horrekin (deia egiteko).
+
+**Inplementazioa:**
+```java
+private void openPhone() {
+    Intent callIntent = new Intent(Intent.ACTION_DIAL);
+    callIntent.setData(Uri.parse("tel:" + PHONE_NUMBER));
+    try {
+        startActivity(callIntent);
+    } catch (Exception e) {
+        Toast.makeText(this, R.string.deia_errorea, Toast.LENGTH_SHORT).show();
+    }
+}
+```
+
+**OHARRA**: `ACTION_DIAL` erabiltzen da (ez `ACTION_CALL`), erabiltzaileak deia egitea erabaki dezan.
+
+#### 2. Posta Elektronikoa (ACTION_SENDTO eta ACTION_SEND_MULTIPLE)
+
+**Helburua**: Fitxategiak Gmail (edo beste posta-app) bidez bidaltzeko, eranskin gisa.
+
+**Inplementazioa (AgendaModuluaActivity.esportatuEtaBidali()):**
+```java
+private void esportatuEtaBidali() {
+    // 1. Fitxategiak esportatu (XML, TXT, CSV)
+    AgendaEsportatzailea esportatzailea = new AgendaEsportatzailea(this);
+    esportatzailea.agendaXMLSortu();
+    esportatzailea.agendaTXTSortu();
+    
+    // 2. FileProvider erabiliz URI-ak lortu
+    ArrayList<Uri> uriak = new ArrayList<>();
+    String pakeIzena = getPackageName();
+    if (xmlFitx.exists() && xmlFitx.length() > 0) {
+        uriak.add(FileProvider.getUriForFile(this, pakeIzena + ".fileprovider", xmlFitx));
+    }
+    if (txtFitx.exists() && txtFitx.length() > 0) {
+        uriak.add(FileProvider.getUriForFile(this, pakeIzena + ".fileprovider", txtFitx));
+    }
+    
+    // 3. Intent sortu (ACTION_SEND_MULTIPLE)
+    Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+    intent.setType("*/*");
+    intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uriak);
+    intent.putExtra(Intent.EXTRA_SUBJECT, gaia);
+    intent.putExtra(Intent.EXTRA_EMAIL, new String[]{HELBIDE_POSTA});
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    
+    // 4. Gmail Intent (lehenetsia)
+    Intent gmail = new Intent(intent).setPackage("com.google.android.gm");
+    if (gmail.resolveActivity(getPackageManager()) != null) {
+        startActivity(gmail);
+    } else {
+        startActivity(Intent.createChooser(intent, getString(R.string.postaz_hautatu)));
+    }
+}
+```
+
+**FileProvider Konfigurazioa:**
+- `res/xml/file_paths.xml`: Barne-memoria (`filesDir`) sarbidea
+- `AndroidManifest.xml`: FileProvider erregistratu
+
+**Abantailak:**
+- **Segurtasuna**: FileProvider erabiliz, fitxategiak modu seguruan partekatzen dira.
+- **Flexibilitatea**: Gmail lehenetsia, baina beste posta-app batzuk ere erabil daitezke.
+- **Fitxategi Anitzak**: `ACTION_SEND_MULTIPLE` erabiliz, hainbat fitxategi bidal daitezke aldi berean.
 
 ### XML bidezko Sinkronizazioa eta "Upsert" Logika
 
@@ -432,12 +666,118 @@ public void txertatuBisita(@NonNull Agenda agenda, @Nullable KargatuCallback cal
 
 ---
 
-## 🔒 Segurtasuna
+## 🔒 Segurtasuna eta Iragazkiak
 
-- **SessionManager**: Saio-kudeaketa segurua SharedPreferences erabiliz
-- **Segurtasun iragazkia**: Komertzial bakoitzak bere datuak bakarrik ikusten ditu
-- **Balidazio zorrotza**: Datuak datu-basean sartu aurretik baliozkotzen dira
-- **Transakzio seguruak**: Datuen osotasuna bermatzeko
+### SessionManager: Saio-Kudeaketa Segurua
+
+**Helburua**: Saioa hasi duen komertzialaren kodea modu seguruan gordetzen du, SharedPreferences erabiliz.
+
+**Inplementazioa:**
+```java
+public class SessionManager {
+    private static final String PREF_IZENA = "AppKomertziala_Session";
+    private static final String GAKOA_KOMMERTZIALA_KODEA = "komertzial_kodea";
+    
+    public void saioaHasi(String komertzialKodea, String komertzialIzena) {
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putString(GAKOA_KOMMERTZIALA_KODEA, komertzialKodea.trim());
+        editor.apply();
+    }
+    
+    public String getKomertzialKodea() {
+        return sharedPreferences.getString(GAKOA_KOMMERTZIALA_KODEA, null);
+    }
+}
+```
+
+**SEGURTASUNA**: Kodea bakarrik SharedPreferences-en gordetzen da, ez da inoiz Intent-etan edo beste lekuetan erabiltzen behar kodea zuzenean. SessionManager bidez bakarrik.
+
+### Segurtasun Iragazkia: komertzialKodea WHERE Klausulak
+
+**Helburua**: Komertzial bakoitzak bere datuak bakarrik ikusteko gaitasuna. Datuak datu-basean sartu aurretik, `komertzialKodea` parametroa beti gehitzen da `WHERE` klausulan.
+
+#### Inplementazioa Hiru Geruzatan
+
+**1. Repository Geruza (AgendaRepository):**
+```java
+public void bilatuBezeroaz(@NonNull String filter, @NonNull KargatuCallback callback) {
+    executorService.execute(() -> {
+        // SEGURTASUNA: SessionManager erabiliz uneko komertzialaren kodea lortu
+        SessionManager sessionManager = new SessionManager(context);
+        String komertzialKodea = sessionManager.getKomertzialKodea();
+        
+        if (komertzialKodea == null || komertzialKodea.isEmpty()) {
+            callback.onEmaitza(new ArrayList<>());
+            return;
+        }
+        
+        // SEGURTASUNA: bakarrik uneko komertzialaren bisitak
+        List<Agenda> bisitak = agendaDao.bilatuBezeroaz(filter.trim(), komertzialKodea);
+        callback.onEmaitza(bisitak);
+    });
+}
+```
+
+**2. DAO Geruza (AgendaDao):**
+```java
+@Query("SELECT * FROM agenda_bisitak WHERE " +
+       "(bazkideaKodea LIKE '%' || :filter || '%' OR " +
+       "deskribapena LIKE '%' || :filter || '%') AND " +
+       "komertzialKodea = :komertzialKodea " +  // SEGURTASUNA: WHERE klausula
+       "ORDER BY bisitaData DESC")
+List<Agenda> bilatuBezeroaz(String filter, String komertzialKodea);
+```
+
+**3. Activity Geruza (EskaerakActivity):**
+```java
+private void kargatuEskaerak() {
+    new Thread(() -> {
+        // SEGURTASUNA: SessionManager erabiliz uneko komertzialaren kodea lortu
+        SessionManager sessionManager = new SessionManager(this);
+        String komertzialKodea = sessionManager.getKomertzialKodea();
+        
+        if (komertzialKodea == null || komertzialKodea.isEmpty()) {
+            // Saioa ez dago hasita
+            return;
+        }
+        
+        // SEGURTASUNA: bakarrik uneko komertzialaren eskaerak
+        List<EskaeraGoiburua> goiburuak = 
+            datuBasea.eskaeraGoiburuaDao().komertzialarenEskaerak(komertzialKodea.trim());
+    }).start();
+}
+```
+
+#### Datu-Ihesak Ekiditeko Mekanismoak
+
+1. **Query Guztietan WHERE Klausula**: Datu-baseko query guztiek `komertzialKodea = :komertzialKodea` klausula dute.
+2. **SessionManager Validazioa**: Kodea uneko saioaren kodea dela egiaztatzen da (`kodeaBalidatu()` metodoa).
+3. **Repository Abstrakzioa**: UI-ak ez du zuzenean DAO-ak erabiltzen; Repository-ek segurtasun iragazkia aplikatzen du.
+4. **Transakzio Seguruak**: Datuak gordetzeko aurretik, komertzial kodea balidatzen da (`EskaeraBalidatzailea`).
+
+**Adibidea (AgendaDao - Query Guztiak):**
+```java
+// SEGURTASUNA: Komertzial baten bisitak bakarrik
+@Query("SELECT * FROM agenda_bisitak WHERE komertzialKodea = :komertzialKodea ORDER BY bisitaData DESC")
+List<Agenda> getVisitsByKomertzial(String komertzialKodea);
+
+// SEGURTASUNA: Bilaketa orokorra, uneko komertzialaren bisitak bakarrik
+@Query("SELECT DISTINCT a.* FROM agenda_bisitak a " +
+       "WHERE a.komertzialKodea = :komertzialKodea AND (" +
+       "a.bisitaData LIKE '%' || :filter || '%' OR ...) " +
+       "ORDER BY a.bisitaData DESC")
+List<Agenda> bilatuOrokorra(String filter, String komertzialKodea);
+
+// SEGURTASUNA: Bisita bat ezabatu, bakarrik uneko komertzialarena bada
+@Query("DELETE FROM agenda_bisitak WHERE id = :id AND komertzialKodea = :komertzialKodea")
+int ezabatuSegurua(long id, String komertzialKodea);
+```
+
+### Balidazio Zorrotza
+
+- **EskaeraBalidatzailea**: Datuak datu-basean sartu aurretik baliozkotzen dira (komertzialKodea, bazkideaKodea).
+- **UI Mailako Balidazioa**: Formularioetan hutsen kontrolak eta formatuen egiaztapena.
+- **Transakzio Seguruak**: Datuen osotasuna bermatzeko, transakzio bakar batean exekutatzen dira eragiketak.
 
 ---
 
@@ -452,6 +792,62 @@ Proiektu hau pribatua da eta jabetza intelektualaren babesa du.
 **Techno Basque** - Android garapena eta kode garbia.
 
 ---
+
+## 📁 Fitxategien Gida Teknikoa
+
+Proiektuko Java fitxategi guztien deskribapen tekniko eta funtzionala. Fitxategi bakoitzak helburu argi bat du eta proiektuaren osotasunean bere erantzukizuna betetzen du. Karpeta bakoitzaren papera eta fitxategi nagusien arteko uztartzea azaltzen da.
+
+### db.kontsultak: Datuen Kudeaketa
+
+| Fitxategia | Papera | Nola Uztartzen Da |
+|------------|--------|-------------------|
+| **AppDatabase** | Room datu-basearen instantzia bakarra (singleton) | `getInstance()` deitzean, migrazioak automatikoki exekutatzen dira. DAO interfazeak eskuratzeko erabiltzen da: `db.agendaDao()`, `db.bazkideaDao()`, etab. |
+| **AgendaDao** | Agenda (bisitak) taularen kontsultak | **SEGURTASUNA**: Query guztiek `komertzialKodea = :komertzialKodea` klausula dute. `AgendaRepository`-ek erabiltzen du, UI-ak zuzenean ez du erabiltzen. |
+| **BazkideaDao** | Bazkideak taularen kontsultak | `XMLKudeatzailea.bazkideakInportatu()` erabiltzen du upsert logikarekin. `BazkideaFormularioActivity`-k erabiltzen du bazkideak kudeatzeko. |
+| **EskaeraGoiburuaDao** | Eskaera goiburuak taularen kontsultak | `EskaerakActivity`-k erabiltzen du uneko komertzialaren eskaerak kargatzeko. `MainActivity.gordeEskaera()` erabiltzen du eskaera berriak gordetzeko. |
+| **EskaeraXehetasunaDao** | Eskaera xehetasunak taularen kontsultak | `MainActivity.gordeEskaera()` erabiltzen du saskiko produktuak eskaera xehetasun gisa gordetzeko transakzioan. |
+| **KatalogoaDao** | Katalogoa taularen kontsultak | `XMLKudeatzailea.katalogoaInportatu()` erabiltzen du wipe-and-load estrategiarekin (asteko eguneraketa). `MainActivity`-k erabiltzen du produktuen zerrenda kargatzeko eta stock eguneratzeko. |
+| **KomertzialaDao** | Komertzialak taularen kontsultak | `LoginActivity`-k erabiltzen du komertzial hautatzeko. `EskaeraBalidatzailea` erabiltzen du komertzial kodea balidatzeko. |
+| **LoginaDao** | Loginak taularen kontsultak | `LoginActivity.attemptLogin()` erabiltzen du erabiltzaile/pasahitza balidatzeko. `XMLKudeatzailea.loginakInportatu()` erabiltzen du loginak inportatzeko. |
+| **HistorialCompraDao** | HistorialCompra taularen kontsultak | `HistorialCompraActivity`-k erabiltzen du erosketa historial guztiak kargatzeko. Bidalketa XML fitxategiak inportatzean erabiltzen da. |
+| **AgendaRepository** | Room eta UI-aren arteko geruza abstraktua | `AgendaModuluaActivity`-k erabiltzen du bisitak kargatzeko, bilatzeko eta gordetzeko. `SessionManager` erabiliz segurtasun iragazkia aplikatzen du. `ExecutorService` erabiliz hari nagusitik kanpo exekutatzen da. |
+
+### segurtasuna: Segurtasun Mekanismoak
+
+| Fitxategia | Papera | Nola Uztartzen Da |
+|------------|--------|-------------------|
+| **SessionManager** | Saioa hasi duen komertzialaren kodea modu seguruan gordetzen du | `LoginActivity`-k erabiltzen du saioa hasi ondoren (`saioaHasi()`). `AgendaRepository` eta `EskaerakActivity` erabiltzen dute uneko komertzialaren kodea lortzeko (`getKomertzialKodea()`). Query guztietan `WHERE komertzialKodea = :komertzialKodea` klausula aplikatzeko oinarria. |
+| **EskaeraBalidatzailea** | Eskaerak datu-basean gordetzeko aurretik datuen integritatea egiaztatzen du | `MainActivity.gordeEskaera()` erabiltzen du eskaera balidatzeko aurretik. `balidatuEskaera()` metodoa: komertzialKodea eta bazkideaKodea datu-basean existitzen direla egiaztatzen du. `balidatuEtaGorde()` metodoa: balidatu eta gorde transakzio seguru batean. |
+
+### xml: Datuen Sinkronizazioa eta Txostenak
+
+| Fitxategia | Papera | Nola Uztartzen Da |
+|------------|--------|-------------------|
+| **XMLKudeatzailea** | XML fitxategiak inportatzeko kudeatzailea | `LoginActivity`-k erabiltzen du XML fitxategiak inportatzeko (`guztiakInportatu()`, `inportatuFitxategia()`). `XmlPullParser` erabiliz XML parseatu. Upsert logika: existitzen bada eguneratu, bestela sortu (`OnConflictStrategy.REPLACE`). Transakzio seguruak: datu guztiak transakzio bakar batean gorde. |
+| **XMLEsportatzailea** | Room datu-baseko datuak XML fitxategietara esportatu | `DatuKudeatzailea`-k erabiltzen du esportazioak koordinatzeko (`bazkideBerriakEsportatu()`, `eskaeraBerriakEsportatu()`). `XmlSerializer` erabiliz XML sortu. Barne-memorian idazten du (`Context.openFileOutput()`). |
+| **DatuKudeatzailea** | Esportazio eta inportazio logika koordinatzen du | `MainActivity`-k erabiltzen du esportazioak eta inportazioak koordinatzeko. Eguneroko txostena: bazkide berriak eta eskaera berriak. Asteko inportazioa: katalogoa. Hileroko laburpena: agenda. |
+| **AgendaEsportatzailea** | Agenda bi formatutan esportatu | `AgendaModuluaActivity`-k erabiltzen du agenda esportatzeko (`esportatuEtaBidali()`). **SEGURTASUNA**: uneko komertzialaren bisitak bakarrik esportatzen dira. XML formatua (ofiziala) eta TXT formatua (iraurgarria). |
+| **InbentarioKudeatzailea** | Katalogoa astero inportatzeko kudeatzailea | `MainActivity`-k erabiltzen du katalogoa inportatzeko. Barne-memoriatik edo assets-etik katalogoa inportatu. Wipe-and-load estrategia: aurreko katalogoa ezabatu, XMLko produktuak bakarrik txertatu. |
+| **XmlBilatzailea** | Assets-en dauden XML fitxategiak bilatzen ditu | `LoginActivity`-k erabiltzen du falta diren XML fitxategiak zehazteko. `MainActivity`-k erabiltzen du XML falta diren mezuak erakusteko. |
+
+### UI (Activities/Adapters): Erabiltzaile Interfazea
+
+| Fitxategia | Papera | Nola Uztartzen Da |
+|------------|--------|-------------------|
+| **LoginActivity** | Saioa hasiera eta segurtasun geruza | Pantaila nagusia aplikazioa irekitzean. XML fitxategiak inportatzeko (`XMLKudeatzailea`). Komertzial hautaketa (`KomertzialaDao`). Erabiltzaile/pasahitza balidazioa (`LoginaDao`). Google Maps integrazioa (Donostia zentratua). `SessionManager.saioaHasi()` deitzean saioa hasi. |
+| **MainActivity** | Pantaila nagusia (BottomNavigationView) | Tab-ak konfiguratu (Hasiera, Agenda, Bazkideak, Inventarioa). Google Maps + kontaktua (Map, Call, Email intents). Saskia kudeaketa (`SaskiaAdapter`). Eskaera gordetzea (`EskaeraBalidatzailea`, `EskaeraGoiburuaDao`, `EskaeraXehetasunaDao`, `KatalogoaDao.stockaEguneratu()`). Esportazioak (`DatuKudeatzailea`, `AgendaEsportatzailea`). |
+| **AgendaModuluaActivity** | Agenda moduluaren pantaila nagusia | `AgendaRepository` erabiliz bisitak kargatzeko, bilatzeko eta gordetzeko. Bilaketa funtzioa (data, bezeroa, deskribapena). Esportatu eta bidali (`AgendaEsportatzailea`, Gmail Intent). `BisitaFormularioActivity` ireki bisita berria/editatu. |
+| **BisitaFormularioActivity** | Bisita berria/editatu formularioa | Datuak balidatu (`baliozkotuFormularioa()`). Bisita gorde transakzio seguru batean (`AgendaDao`, `SessionManager`). MaterialDatePicker eta MaterialTimePicker erabiliz data eta ordua hautatu. |
+| **EskaerakActivity** | Eskaeren zerrenda pantaila | **SEGURTASUNA**: `SessionManager` erabiliz uneko komertzialaren eskaerak bakarrik (`EskaeraGoiburuaDao.komertzialarenEskaerak()`). `EskaerakAdapter` erabiliz zerrenda erakutsi. |
+| **BazkideaFormularioActivity** | Bazkide berria/editatu formularioa | Bazkidea gorde datu-basean (`BazkideaDao`, upsert logika). Datuak gorde aurretik baieztapena. |
+| **ZitaGehituActivity** | Zita berria (EskaeraGoiburua) gehitzeko | Zita gorde datu-basean (`EskaeraGoiburuaDao`). MaterialDatePicker eta MaterialTimePicker erabiliz. |
+| **ProduktuDetalaActivity** | Produktu baten informazioa erakusten du | Produktuaren datuak erakutsi (`KatalogoaDao.artikuluaBilatu()`). Produktua saskira gehitu (RESULT_OK bidali `MainActivity`-ra). |
+| **HistorialCompraActivity** | Erosketen historiala pantaila | Historial guztiak kargatu (`HistorialCompraDao.guztiak()`). `HistorialCompraAdapter` erabiliz zerrenda erakutsi. |
+| **KatalogoaAdapter** | Katalogoa (inbentarioa) zerrenda erakusteko | `MainActivity`-k erabiltzen du produktuen zerrenda erakusteko. `OnErosiClickListener`: produktua saskira gehitu. `OnItemClickListener`: produktuaren detale orria ireki. |
+| **SaskiaAdapter** | Erosketa saskiko zerrenda erakusteko | `MainActivity`-k erabiltzen du saskia erakusteko. Kopurua aldatu (+/-), elementu bat kendu. Badge eta guztira eguneratzeko callback. |
+| **AgendaBisitaAdapter** | Agenda bisiten zerrenda erakusteko | `AgendaModuluaActivity`-k erabiltzen du bisiten zerrenda erakusteko. `OnBisitaEkintzaListener`: Ikusi, Editatu, Ezabatu botoiak. |
+| **EskaerakAdapter** | Eskaeren zerrenda erakusteko | `EskaerakActivity`-k erabiltzen du eskaeren zerrenda erakusteko. |
+| **HistorialCompraAdapter** | Erosketa historial zerrenda erakusteko | `HistorialCompraActivity`-k erabiltzen du historial zerrenda erakusteko. |
 
 ## 📁 Fitxategien Deskribapena
 
