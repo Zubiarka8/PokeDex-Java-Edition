@@ -453,5 +453,88 @@ Proiektu hau pribatua da eta jabetza intelektualaren babesa du.
 
 ---
 
-*Dokumentazio hau proiektuaren arkitektura eta funtzionalitate kritikoak deskribatzen ditu. Kodearen xehetasun gehiago lortzeko, kodea kontsultatu edo garatzaileekin jarri harremanetan.*
+## 📁 Fitxategien Deskribapena
+
+Proiektuko Java fitxategi guztien deskribapen tekniko eta funtzionala. Fitxategi bakoitzak helburu argi bat du eta proiektuaren osotasunean bere erantzukizuna betetzen du.
+
+### Activities (Pantailak)
+
+| Fitxategia | Helburua | Funtzio Garrantzitsuenak |
+|------------|----------|--------------------------|
+| **LoginActivity** | Saioa hasiera eta segurtasun geruza | `attemptLogin()`: Erabiltzaile/pasahitza balidazioa<br>`sartuKomertzialGisa()`: Komertzial hautaketa<br>`kargatuXmlGuztiak()`: XML fitxategiak inportatu<br>`onMapReady()`: Google Maps Donostian zentratu |
+| **MainActivity** | Pantaila nagusia (BottomNavigationView) | `onCreate()`: Tab-ak konfiguratu (Hasiera, Agenda, Bazkideak, Inventarioa)<br>`kargatuKatalogoa()`: Produktuen zerrenda kargatu<br>`kargatuBazkideak()`: Bazkideen zerrenda kargatu<br>`gordeEskaera()`: Saskiko produktuak eskaera gisa gorde<br>`onMapReady()`: Google Maps + kontaktua (Map, Call, Email intents) |
+| **AgendaModuluaActivity** | Agenda moduluaren pantaila nagusia | `kargatuZerrenda()`: Bisiten zerrenda kargatu (Repository erabiliz)<br>`konfiguratuBilaketa()`: Bilaketa funtzioa (data, bezeroa, deskribapena)<br>`esportatuEtaBidali()`: XML/TXT esportatu eta Gmail bidez bidali<br>`irekiFormularioa()`: Bisita berria/editatu formularioa ireki |
+| **BisitaFormularioActivity** | Bisita berria/editatu formularioa | `baliozkotuFormularioa()`: Datuen balidazioa (hutsen kontrolak, formatuak)<br>`gordeBisita()`: Bisita gorde transakzio seguru batean<br>`erakutsiDataHautatzailea()`: MaterialDatePicker erabiliz data hautatu<br>`erakutsiOrduaHautatzailea()`: MaterialTimePicker erabiliz ordua hautatu |
+| **EskaerakActivity** | Eskaeren zerrenda pantaila | `kargatuEskaerak()`: **SEGURTASUNA** - bakarrik uneko komertzialaren eskaerak<br>`adapter.eguneratuZerrenda()`: Eskaeren zerrenda RecyclerView-n erakutsi |
+| **BazkideaFormularioActivity** | Bazkide berria/editatu formularioa | `erakutsiGordeBaieztapena()`: Datuak gorde aurretik baieztapena<br>`erakutsiEzabatuBaieztapena()`: Bazkidea ezabatu aurretik baieztapena<br>`gordeBazkidea()`: Bazkidea gorde datu-basean (upsert logika) |
+| **ZitaGehituActivity** | Zita berria (EskaeraGoiburua) gehitzeko | `gordeCita()`: Zita gorde datu-basean<br>`erakutsiDataHautatzailea()`: Data hautatzailea<br>`erakutsiOrduaHautatzailea()`: Ordua hautatzailea |
+| **ProduktuDetalaActivity** | Produktu baten informazioa erakusten du | `beteEdukia()`: Produktuaren datuak erakutsi (irudia, izena, prezioa, stock)<br>`erosiSaskira()`: Produktua saskira gehitu (RESULT_OK bidali) |
+| **HistorialCompraActivity** | Erosketen historiala pantaila | `kargatuHistoriala()`: Historial guztiak kargatu datu-basean<br>`adapter.eguneratuZerrenda()`: Historial zerrenda RecyclerView-n erakutsi |
+
+### Room Entities (Datu-base Entitateak)
+
+| Fitxategia | Helburua | Eremu Garrantzitsuenak |
+|------------|-------|------------------------|
+| **Komertziala** | Komertzialen datu-egitura | `id` (PK, auto), `kodea` (unique), `izena`, `abizena`, `posta`, `jaiotzeData`, `argazkia` |
+| **Bazkidea** | Bazkideen datu-egitura | `id` (PK, auto), `nan` (indizea), `izena`, `abizena`, `telefonoZenbakia`, `posta`, `jaiotzeData`, `argazkia`, `kodea`, `helbidea`, `probintzia`, `komertzialKodea` (FK → `komertzialak.kodea`, `ON DELETE CASCADE`), `sortutakoData` |
+| **Agenda** | Bisiten agenda entitatea | `id` (PK, auto), `bisitaData`, `ordua`, `komertzialKodea`, `bazkideaKodea`, `bazkideaId` (FK), `komertzialaId` (FK), `deskribapena`, `egoera` |
+| **EskaeraGoiburua** | Eskaeraren goiburua | `zenbakia` (PK), `data`, `komertzialKodea`, `komertzialId`, `ordezkaritza`, `bazkideaKodea`, `bazkideaId` |
+| **EskaeraXehetasuna** | Eskaeraren xehetasunak | `id` (PK, auto), `eskaeraZenbakia`, `artikuluKodea`, `kantitatea`, `prezioa` |
+| **Eskaera** | Eskaera zaharrak (XML formatua) | `id` (PK, auto), `eskaeraID`, `bazkideaId` (FK → `bazkideak.id`, `ON DELETE CASCADE`), `prodIzena`, `data`, `kopurua`, `prodArgazkia` |
+| **Katalogoa** | Produktuen katalogoa | `artikuluKodea` (PK), `izena`, `salmentaPrezioa`, `stock`, `irudiaIzena` |
+| **Logina** | Erabiltzaile/pasahitza sarbideak | `id` (PK, auto), `erabiltzailea`, `pasahitza`, `komertzialKodea` |
+| **HistorialCompra** | Erosketen historiala (bidalketa XML) | `id` (PK, auto), `bidalketaId`, `kodea`, `helmuga`, `data`, `amaituta`, `productoId`, `productoIzena`, `eskatuta`, `bidalita`, `prezioUnit`, `argazkia` |
+
+### DAOs (Data Access Objects)
+
+| Fitxategia | Helburua | Kontsulta Garrantzitsuenak |
+|------------|----------|----------------------------|
+| **AgendaDao** | Agenda (bisitak) taularen kontsultak | `getVisitsByKomertzial()`: **SEGURTASUNA** - komertzial baten bisitak bakarrik<br>`bilatuBezeroaz()`: Bazkide kodea/izenaren arabera bilatu<br>`bilatuDataTarteaz()`: Data tartearen arabera bilatu<br>`bilatuOrokorra()`: Bilaketa orokorra (data, izena, deskribapena, egoera)<br>`idzBilatuSegurua()`: **SEGURTASUNA** - ID bidezko bilaketa segurua |
+| **BazkideaDao** | Bazkideak taularen kontsultak | `nanBilatu()`: NAN baten arabera bazkidea bilatu<br>`bilatu()`: Bilatzailea (NAN, izena, abizena, posta, telefonoa)<br>`txertatu()`: Upsert logika (`OnConflictStrategy.REPLACE`)<br>`ezabatuIdakEzDirenak()`: Sinkronizazioa (id zerrenda = mantendu behar diren id-ak) |
+| **EskaeraGoiburuaDao** | Eskaera goiburuak taularen kontsultak | `komertzialarenEskaerak()`: Komertzial kode baten arabera eskaerak<br>`egunekoEskaerak()`: Eguneko eskaerak (esportazioa)<br>`hilabetekoEskaerak()`: Hilabeteko eskaerak (agenda esportazioa) |
+| **EskaeraXehetasunaDao** | Eskaera xehetasunak taularen kontsultak | `eskaerarenXehetasunak()`: Eskaera zenbaki baten arabera xehetasunak<br>`txertatuGuztiak()`: Hainbat xehetasun txertatu transakzioan |
+| **EskaeraDao** | Eskaera zaharrak taularen kontsultak | `bazkidearenEskaerak()`: Bazkide ID baten arabera eskaerak<br>`ezabatuBazkidearenEskaerak()`: Bazkide baten eskaera guztiak ezabatu (sinkronizazioa) |
+| **KatalogoaDao** | Katalogoa taularen kontsultak | `artikuluaBilatu()`: Artikulu kodea baten arabera produktua bilatu<br>`guztiak()`: Produktu guztiak<br>`stockaEguneratu()`: Stock eguneratu eskaera bat egiten denean |
+| **KomertzialaDao** | Komertzialak taularen kontsultak | `kodeaBilatu()`: Kode baten arabera komertziala bilatu<br>`guztiak()`: Komertzial guztiak |
+| **LoginaDao** | Loginak taularen kontsultak | `sarbideaBalidatu()`: Erabiltzaile/pasahitza balidazioa |
+| **HistorialCompraDao** | HistorialCompra taularen kontsultak | `guztiak()`: Historial guztiak<br>`txertatuGuztiak()`: Hainbat historial txertatu transakzioan |
+
+### Repositories eta Kudeatzaileak
+
+| Fitxategia | Helburua | Funtzio Garrantzitsuenak |
+|------------|----------|--------------------------|
+| **AgendaRepository** | Room eta UI-aren arteko geruza abstraktua | `txertatuBisita()`: Bisita bat txertatu (upsert)<br>`kargatuBisitak()`: **SEGURTASUNA** - uneko komertzialaren bisitak bakarrik<br>`bilatuBezeroaz()`: **SEGURTASUNA** - bezeroaren arabera bilatu<br>`bilatuDataTarteaz()`: **SEGURTASUNA** - data tartearen arabera bilatu<br>`bilatuOrokorra()`: **SEGURTASUNA** - bilaketa orokorra<br>`ezabatuBisita()`: Bisita ezabatu (segurtasun iragazkiarekin)<br>`ExecutorService` erabiliz hari nagusitik kanpo exekutatzen da |
+| **XMLKudeatzailea** | XML fitxategiak inportatzeko kudeatzailea | `komertzialakInportatu()`: Wipe-and-load estrategia<br>`bazkideakInportatu()`: **Upsert logika** - existitzen bada eguneratu, bestela sortu<br>`katalogoaInportatu()`: Wipe-and-load (asteko eguneraketa)<br>`agendaInportatu()`: **Upsert logika** - bisitak transakzio bakar batean<br>`loginakInportatu()`: Loginak inportatu<br>`guztiakInportatu()`: XML guztiak ordena egokian inportatu<br>`XmlPullParser` erabiliz XML parseatu |
+| **DatuKudeatzailea** | Esportazio eta inportazio logika koordinatzen du | `bazkideBerriakEsportatu()`: Eguneroko txostena (bazkide berriak)<br>`eskaeraBerriakEsportatu()`: Eguneroko txostena (eskaera berriak)<br>`katalogoaAsterokoInportazioaEgin()`: Asteko inportazioa (katalogoa)<br>`agendaHilerokoEsportazioaEgin()`: Hileroko laburpena (agenda) |
+| **XMLEsportatzailea** | Room datu-baseko datuak XML fitxategietara esportatu | `bazkideBerriakEsportatu()`: `bazkide_berriak.xml` sortu<br>`eskaeraBerriakEsportatu()`: `eskaera_berriak.xml` sortu<br>`komertzialakEsportatu()`: `komertzialak.xml` sortu<br>`XmlSerializer` erabiliz XML sortu |
+| **AgendaEsportatzailea** | Agenda bi formatutan esportatu | `agendaXMLSortu()`: **SEGURTASUNA** - uneko komertzialaren bisitak bakarrik<br>`agendaTXTSortu()`: Testu-fitxategia (iraurgarria)<br>`barneMemorianLekuNahikoa()`: Fitxategien egiaztapena |
+| **InbentarioKudeatzailea** | Katalogoa astero inportatzeko kudeatzailea | `katalogoaAsterokoInportazioaEgin()`: Barne-memoriatik edo assets-etik katalogoa inportatu<br>`katalogoaInportatuFluxutik()`: Sarrera-fluxu batetik katalogoa inportatu |
+
+### Segurtasuna eta Util
+
+| Fitxategia | Helburua | Funtzio Garrantzitsuenak |
+|------------|----------|--------------------------|
+| **SessionManager** | Saioa hasi duen komertzialaren kodea modu seguruan gordetzen du | `saioaHasi()`: Komertzial kodea eta izena gorde (SharedPreferences)<br>`saioaItxi()`: Saioa itxi (datuak ezabatu)<br>`getKomertzialKodea()`: **SEGURTASUNA** - uneko komertzialaren kodea itzuli<br>`getKomertzialIzena()`: Komertzialaren izena itzuli<br>`saioaHasitaDago()`: Saioa hasita dagoen egiaztatu<br>`kodeaBalidatu()`: **SEGURTASUNA** - kodea uneko saioaren kodea dela egiaztatu |
+| **EskaeraBalidatzailea** | Eskaerak datu-basean gordetzeko aurretik datuen integritatea egiaztatzen du | `balidatuEskaera()`: Derrigorrezko eremuak beteta daudela egiaztatu (komertzialKodea, bazkideaKodea)<br>`balidatuEtaGorde()`: Balidatu eta gorde transakzio seguru batean<br>`IllegalArgumentException` jaurtitzen du daturen bat falta bada |
+| **XmlBilatzailea** | Assets-en dauden XML fitxategiak bilatzen ditu | `faltaDa()`: Assets-en fitxategi hori badagoen ala ez<br>`faltatzenDiren()`: Falta diren XML fitxategien zerrenda<br>`loginakFaltaDa()`, `komertzialakFaltaDa()`, `bazkideakFaltaDa()`, `katalogoaFaltaDa()`: Fitxategi espezifikoak falta diren egiaztatu |
+
+### Adapters (RecyclerView)
+
+| Fitxategia | Helburua | Funtzio Garrantzitsuenak |
+|------------|----------|--------------------------|
+| **AgendaBisitaAdapter** | Agenda bisiten zerrenda erakusteko | `eguneratuZerrenda()`: Zerrenda eguneratu<br>`OnBisitaEkintzaListener`: Ikusi, Editatu, Ezabatu botoiak<br>`AgendaElementua`: Bisita datuak eta bazkidearen izena |
+| **EskaerakAdapter** | Eskaeren zerrenda erakusteko | `eguneratuZerrenda()`: Eskaeren zerrenda eguneratu<br>`EskaeraElementua`: Zenbakia, data, artikulu kopurua, guztira |
+| **KatalogoaAdapter** | Katalogoa (inbentarioa) zerrenda erakusteko | `eguneratuZerrenda()`: Produktuen zerrenda eguneratu<br>`OnErosiClickListener`: Erosi botoia (saskira gehitu)<br>`OnItemClickListener`: Item sakatzean detale orria ireki |
+| **SaskiaAdapter** | Erosketa saskiko zerrenda erakusteko | `onBindViewHolder()`: Kopurua aldatu (+/-), elementu bat kendu<br>`onSaskiaAldaketa`: Badge eta guztira eguneratzeko callback |
+| **HistorialCompraAdapter** | Erosketa historial zerrenda erakusteko | `eguneratuZerrenda()`: Historial zerrenda eguneratu<br>`HistorialElementua`: Produktua, kantitatea, prezio unitarioa, prezio totala |
+
+### AppDatabase
+
+| Fitxategia | Helburua | Funtzio Garrantzitsuenak |
+|------------|----------|--------------------------|
+| **AppDatabase** | Room datu-basearen instantzia bakarra (singleton) | `getInstance()`: Singleton patroia (synchronized)<br>`addMigrations()`: 15 bertsio migrazio estrategia<br>`fallbackToDestructiveMigration()`: Eskema aldaketa handia<br>`allowMainThreadQueries()`: Kontsulta bat hari nagusian egiten bada<br>`komertzialaDao()`, `bazkideaDao()`, `agendaDao()`, etab.: DAO interfazeak |
+
+---
+
+*Dokumentazio hau proiektuaren arkitektura, funtzionalitate kritikoak eta fitxategi bakoitzaren erantzukizuna deskribatzen ditu. Kodearen xehetasun gehiago lortzeko, kodea kontsultatu edo garatzaileekin jarri harremanetan.*
 
